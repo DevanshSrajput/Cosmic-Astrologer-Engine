@@ -24,11 +24,8 @@ class CosmicAstrologerEngine:
         # Initialize AI astrologer components
         self._setup_ai_astrologer()
         
-        print("✨ Cosmic Engine Ready! Choose your path:")
-        print("  1. Find Perfect Astrologer")
-        print("  2. Get AI Astrologer Reading")
-        print("  3. Run Demo & Analytics")
-    
+        print("✨ Cosmic Engine Ready!")
+        
     def _create_astrologer_dataset(self) -> pd.DataFrame:
         """Create optimized astrologer dataset"""
         astrologers = [
@@ -79,21 +76,29 @@ class CosmicAstrologerEngine:
     
     def _setup_recommendation_engine(self):
         """Setup optimized TF-IDF recommendation engine"""
-        # Create searchable text for each astrologer
+        # Create searchable text for each astrologer with enhanced weighting
         self.astrologer_texts = []
         for _, astrologer in self.astrologers_data.iterrows():
-            text = " ".join(astrologer['specialties']) + " " + astrologer['description']
+            # Give extra weight to specialties by repeating them
+            specialty_text = " ".join(astrologer['specialties']) * 3  # Triple weight
+            focus_text = astrologer['focus_area'] * 2  # Double weight
+            description_text = astrologer['description']
+            
+            # Combine all text with weighted importance
+            text = f"{specialty_text} {focus_text} {description_text}"
             self.astrologer_texts.append(text.lower())
         
-        # Initialize TF-IDF with optimized parameters
+        # Initialize TF-IDF with optimized parameters for better matching
         self.vectorizer = TfidfVectorizer(
             stop_words='english',
-            ngram_range=(1, 2),
-            max_features=1000,
-            lowercase=True
+            ngram_range=(1, 3),  # Include trigrams for better phrase matching
+            max_features=2000,   # Increased features for better discrimination
+            lowercase=True,
+            min_df=1,           # Don't ignore rare words
+            max_df=0.95         # Ignore very common words
         )
         self.tfidf_matrix = self.vectorizer.fit_transform(self.astrologer_texts)
-        print("🚀 Recommendation engine optimized with TF-IDF")
+        print("🚀 Recommendation engine optimized with enhanced TF-IDF")
     
     def _setup_ai_astrologer(self):
         """Setup AI astrologer components"""
@@ -131,29 +136,46 @@ class CosmicAstrologerEngine:
         ]
     
     def _calculate_percentage_relevance(self, score: float) -> int:
-        """Convert cosine similarity to percentage relevance"""
-        # Normalize cosine similarity (0-1) to percentage (0-100)
-        # Apply a boost for better user experience
+        """Convert cosine similarity to percentage relevance with very aggressive scoring"""
         if score <= 0:
             return 0
         
-        # Enhanced scoring algorithm for better percentage distribution
-        percentage = min(100, int((score ** 0.7) * 100))
+        # Ultra-aggressive scoring to ensure high percentages for any positive match
+        # Most TF-IDF cosine similarities are between 0.01-0.3 for real matches
         
-        # Ensure minimum 5% for any positive match
-        if percentage > 0 and percentage < 5:
-            percentage = 5
-            
-        return percentage
+        if score >= 0.3:  # Excellent match
+            percentage = min(100, int(90 + (score - 0.3) * 14))  # 90-100%
+        elif score >= 0.2:  # Very good match
+            percentage = int(80 + (score - 0.2) * 100)  # 80-90%
+        elif score >= 0.12:  # Good match
+            percentage = int(65 + (score - 0.12) * 187)  # 65-80%
+        elif score >= 0.08:  # Decent match
+            percentage = int(50 + (score - 0.08) * 375)  # 50-65%
+        elif score >= 0.05:  # Fair match
+            percentage = int(35 + (score - 0.05) * 500)  # 35-50%
+        elif score >= 0.03:  # Weak match
+            percentage = int(25 + (score - 0.03) * 500)  # 25-35%
+        elif score >= 0.01:  # Very weak match
+            percentage = int(15 + (score - 0.01) * 500)  # 15-25%
+        else:  # Minimal match
+            percentage = max(10, int(score * 1500))  # 10-15%
+        
+        return min(100, percentage)
     
     def find_astrologer(self, query: str, top_k: int = 3) -> List[Dict]:
-        """Find best matching astrologers using optimized search"""
+        """Find best matching astrologers using optimized search with query expansion and keyword boosting"""
         if not query.strip():
             return []
         
+        # Expand query with synonyms for better matching
+        expanded_query = self._expand_query(query.lower())
+        
         # Transform query and calculate similarities
-        query_vector = self.vectorizer.transform([query.lower()])
+        query_vector = self.vectorizer.transform([expanded_query])
         similarities = cosine_similarity(query_vector, self.tfidf_matrix)[0]
+        
+        # Apply keyword boosting for direct matches
+        similarities = self._apply_keyword_boosting(query.lower(), similarities)
         
         # Get top matches
         top_indices = np.argsort(similarities)[::-1][:top_k]
@@ -178,68 +200,395 @@ class CosmicAstrologerEngine:
         
         return recommendations
     
+    def _apply_keyword_boosting(self, query: str, similarities: np.ndarray) -> np.ndarray:
+        """Apply boosting for direct keyword matches"""
+        boosted_similarities = similarities.copy()
+        
+        # Define keyword groups with their boost factors
+        keyword_boosts = {
+            'love': ['love', 'romance', 'romantic', 'relationship', 'dating', 'heart', 'soulmate'],
+            'career': ['career', 'job', 'work', 'business', 'professional', 'money', 'success'],
+            'health': ['health', 'wellness', 'healing', 'medical', 'vitality'],
+            'family': ['family', 'marriage', 'children', 'home', 'parents'],
+            'spiritual': ['spiritual', 'meditation', 'soul', 'enlightenment', 'karma'],
+            'travel': ['travel', 'journey', 'foreign', 'adventure', 'moving'],
+            'general': ['future', 'prediction', 'guidance', 'destiny']
+        }
+        
+        # Check each astrologer for keyword matches and apply boosts
+        for idx, astrologer in self.astrologers_data.iterrows():
+            focus_area = astrologer['focus_area']
+            specialties = astrologer['specialties']
+            
+            boost_factor = 1.0
+            
+            # Check if query contains keywords matching this astrologer's focus
+            if focus_area in keyword_boosts:
+                matching_keywords = keyword_boosts[focus_area]
+                for keyword in matching_keywords:
+                    if keyword in query:
+                        boost_factor += 0.5  # Add 50% boost per matching keyword
+            
+            # Additional boost for direct specialty matches
+            for specialty in specialties:
+                if specialty in query:
+                    boost_factor += 0.3  # Add 30% boost per specialty match
+            
+            # Apply the boost
+            boosted_similarities[idx] *= boost_factor
+        
+        return boosted_similarities
+    
+    def _expand_query(self, query: str) -> str:
+        """Expand query with synonyms and related terms for better matching"""
+        # Define synonym groups for better matching
+        synonyms = {
+            'love': ['love', 'romance', 'romantic', 'relationship', 'dating', 'heart', 'affection'],
+            'relationship': ['relationship', 'love', 'romance', 'partner', 'dating', 'marriage'],
+            'career': ['career', 'job', 'work', 'professional', 'business', 'employment'],
+            'health': ['health', 'wellness', 'healing', 'medical', 'vitality', 'well-being'],
+            'family': ['family', 'relatives', 'parents', 'children', 'home', 'domestic'],
+            'spiritual': ['spiritual', 'soul', 'meditation', 'enlightenment', 'chakra'],
+            'money': ['money', 'finance', 'financial', 'wealth', 'prosperity', 'abundance'],
+            'future': ['future', 'prediction', 'forecast', 'destiny', 'fate', 'tomorrow']
+        }
+        
+        # Expand the query with synonyms
+        expanded_terms = [query]
+        query_words = query.split()
+        
+        for word in query_words:
+            for key, synonym_list in synonyms.items():
+                if word in synonym_list:
+                    expanded_terms.extend(synonym_list)
+                    break
+        
+        # Remove duplicates and join
+        unique_terms = list(set(expanded_terms))
+        return ' '.join(unique_terms)
+    
     def get_ai_reading(self, input_text: str) -> str:
-        """Generate AI astrologer reading"""
+        """Generate AI astrologer reading with context-aware responses"""
         if not input_text.strip():
             return "Please share your cosmic question for guidance."
         
         input_lower = input_text.lower()
         reading_parts = []
         
-        # Mystical opening
-        opening = random.choice(self.mystical_openings)
-        reading_parts.append(f"{opening} powerful insights for your journey.")
+        # Analyze question context for personalized response
+        question_context = self._analyze_question_context(input_lower)
+        
+        # Context-aware mystical opening
+        opening = self._get_contextual_opening(question_context)
+        reading_parts.append(opening)
         
         # Parse astrological elements
-        found_elements = False
+        astrological_elements = self._parse_astrological_elements(input_lower)
+        
+        # Generate context-specific insights
+        context_insights = self._generate_context_insights(question_context, input_lower)
+        if context_insights:
+            reading_parts.extend(context_insights)
+        
+        # Add astrological element insights
+        if astrological_elements:
+            reading_parts.extend(astrological_elements)
+        
+        # Add contextual guidance
+        guidance = self._get_contextual_guidance(question_context)
+        reading_parts.append(guidance)
+        
+        # Add specific predictions or advice based on context
+        predictions = self._generate_predictions(question_context, input_lower)
+        if predictions:
+            reading_parts.extend(predictions)
+        
+        # Context-appropriate blessing
+        blessing = self._get_contextual_blessing(question_context)
+        reading_parts.append(blessing)
+        
+        return " ".join(reading_parts)
+    
+    def _analyze_question_context(self, input_text: str) -> str:
+        """Analyze the context and intent of the user's question"""
+        # Define context keywords
+        contexts = {
+            'love': ['love', 'relationship', 'romance', 'dating', 'marriage', 'partner', 'soulmate', 'heart', 'crush', 'boyfriend', 'girlfriend', 'husband', 'wife'],
+            'career': ['job', 'career', 'work', 'business', 'money', 'success', 'promotion', 'professional', 'employment', 'salary', 'finance'],
+            'health': ['health', 'illness', 'healing', 'medical', 'wellness', 'body', 'mental', 'stress', 'anxiety', 'depression', 'recovery'],
+            'family': ['family', 'parents', 'children', 'mother', 'father', 'siblings', 'home', 'domestic', 'relatives'],
+            'spiritual': ['spiritual', 'soul', 'meditation', 'enlightenment', 'karma', 'past life', 'chakra', 'energy', 'awakening'],
+            'future': ['future', 'prediction', 'what will', 'when will', 'tomorrow', 'next year', 'upcoming', 'forecast'],
+            'travel': ['travel', 'journey', 'move', 'relocation', 'foreign', 'abroad', 'trip', 'adventure'],
+            'general': ['life', 'purpose', 'guidance', 'help', 'advice', 'direction', 'path']
+        }
+        
+        # Count matches for each context
+        context_scores = {}
+        for context, keywords in contexts.items():
+            score = sum(1 for keyword in keywords if keyword in input_text)
+            if score > 0:
+                context_scores[context] = score
+        
+        # Return the context with highest score, or 'general' if no matches
+        if context_scores:
+            return max(context_scores.items(), key=lambda x: x[1])[0]
+        return 'general'
+    
+    def _get_contextual_opening(self, context: str) -> str:
+        """Get context-specific opening based on question type"""
+        openings = {
+            'love': [
+                "The celestial energies of Venus reveal profound insights about your heart's journey.",
+                "The cosmic dance of love surrounds you with powerful romantic vibrations.",
+                "Your heart chakra glows with divine light as the universe prepares romantic blessings."
+            ],
+            'career': [
+                "Jupiter's expansive energy illuminates your professional path with golden opportunities.",
+                "The cosmic wheels of success are turning in your favor, bringing career advancement.",
+                "Saturn's disciplined energy guides your ambitions toward material achievement."
+            ],
+            'health': [
+                "The healing energies of the universe flow through your being, restoring balance.",
+                "Your life force energy is realigning with cosmic harmony for optimal wellness.",
+                "The celestial healers whisper remedies for your physical and spiritual well-being."
+            ],
+            'family': [
+                "The protective energies of Cancer surround your family with nurturing love.",
+                "Ancestral wisdom flows through your bloodline, bringing family harmony.",
+                "The fourth house of home activates with divine blessings for your loved ones."
+            ],
+            'spiritual': [
+                "Your soul's ancient wisdom awakens as you walk the path of enlightenment.",
+                "The veil between dimensions grows thin, revealing sacred spiritual truths.",
+                "Your higher self communicates through cosmic frequencies of divine love."
+            ],
+            'future': [
+                "The crystal ball of time reveals glimpses of your destined future path.",
+                "Prophectic visions dance across the cosmic canvas, showing what's to come.",
+                "The threads of fate weave together to reveal your upcoming life chapters."
+            ],
+            'travel': [
+                "Mercury's swift energy opens pathways to distant lands and new adventures.",
+                "The cosmic compass points toward transformative journeys awaiting you.",
+                "Wanderlust energies activate as the universe calls you to explore new horizons."
+            ],
+            'general': [
+                "The cosmic energies reveal", "Your celestial blueprint shows", "The stars whisper",
+                "Ancient wisdom flows through", "Divine timing brings", "The universe aligns"
+            ]
+        }
+        
+        context_openings = openings.get(context, openings['general'])
+        return random.choice(context_openings)
+    
+    def _parse_astrological_elements(self, input_text: str) -> List[str]:
+        """Parse and respond to specific astrological elements mentioned"""
+        elements = []
         
         # Check for zodiac signs
         for sign, traits in self.zodiac_traits.items():
-            if sign in input_lower:
+            if sign in input_text:
                 trait = random.choice(traits)
-                reading_parts.append(f"Your {sign.title()} energy emphasizes {trait}, guiding your path forward.")
-                found_elements = True
+                elements.append(f"Your {sign.title()} energy emphasizes {trait}, creating powerful manifestations.")
         
         # Check for planets
         for planet, meaning in self.planets.items():
-            if planet in input_lower:
-                reading_parts.append(f"{planet.title()} influences your {meaning}, bringing significant developments.")
-                found_elements = True
+            if planet in input_text:
+                elements.append(f"{planet.title()}'s influence on your {meaning} brings transformative changes.")
         
         # Check for houses
         house_pattern = r'(\d+)(?:st|nd|rd|th)?\s*house'
-        houses = re.findall(house_pattern, input_lower)
+        houses = re.findall(house_pattern, input_text)
         for house_num in houses:
             if house_num in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']:
                 house_key = f"{house_num}{'st' if house_num == '1' else 'nd' if house_num == '2' else 'rd' if house_num == '3' else 'th'}"
                 if house_key in self.house_meanings:
                     meaning = self.house_meanings[house_key]
-                    reading_parts.append(f"The {house_key} house of {meaning} receives cosmic attention, promising growth.")
-                    found_elements = True
+                    elements.append(f"The {house_key} house of {meaning} awakens with cosmic significance.")
         
-        # Add guidance
-        guidance = random.choice(self.guidance_phrases)
-        reading_parts.append(guidance + ".")
-        
-        # Generic reading if no astrological elements found
-        if not found_elements:
-            generic_insights = [
-                "The cosmic currents are shifting to support your highest good",
-                "Your soul is ready for a powerful transformation and awakening",
-                "Divine opportunities are manifesting in your life path",
-                "The universe is conspiring to bring you exactly what you need"
+        return elements
+    
+    def _generate_context_insights(self, context: str, input_text: str) -> List[str]:
+        """Generate specific insights based on question context"""
+        insights = {
+            'love': [
+                "A significant romantic connection approaches your energy field.",
+                "Your heart is ready to receive the love you truly deserve.",
+                "Past relationship patterns are healing, making space for true love."
+            ],
+            'career': [
+                "Professional recognition comes through showcasing your unique talents.",
+                "A new opportunity will test your skills and reward your dedication.",
+                "Financial abundance flows as you align with your true calling."
+            ],
+            'health': [
+                "Your body's natural healing mechanisms are activating powerfully.",
+                "Energy blockages are clearing, restoring your vitality and strength.",
+                "Mind-body-spirit alignment brings optimal wellness and peace."
+            ],
+            'family': [
+                "Family bonds strengthen through understanding and compassion.",
+                "A family situation requires your wisdom and gentle guidance.",
+                "Generational healing flows through your family lineage now."
+            ],
+            'spiritual': [
+                "Your psychic abilities are expanding with cosmic awakening.",
+                "Past life memories surface to provide current life guidance.",
+                "Your spirit guides send clear messages through synchronicities."
+            ],
+            'future': [
+                "The next three months bring significant positive changes.",
+                "A door that seemed closed will unexpectedly open wide.",
+                "Your patience will be rewarded with exactly what you've hoped for."
+            ],
+            'travel': [
+                "A journey, physical or spiritual, will transform your perspective.",
+                "Foreign connections bring unexpected opportunities and growth.",
+                "Your next adventure holds keys to your personal evolution."
+            ],
+            'general': [
+                "The cosmic currents shift to support your highest good.",
+                "Divine timing orchestrates events perfectly for your growth.",
+                "Your soul's purpose becomes clearer with each passing day."
             ]
-            reading_parts.insert(1, random.choice(generic_insights) + ".")
+        }
         
-        # Cosmic blessing
-        blessings = [
-            "May the stars illuminate your path ahead",
-            "Trust in the cosmic plan unfolding for you", 
-            "The universe supports your journey toward fulfillment"
-        ]
-        reading_parts.append(random.choice(blessings) + ".")
+        context_insights = insights.get(context, insights['general'])
+        return [random.choice(context_insights)]
+    
+    def _get_contextual_guidance(self, context: str) -> str:
+        """Provide context-specific guidance"""
+        guidance = {
+            'love': [
+                "Open your heart to receive love while maintaining healthy boundaries.",
+                "Trust your intuition when making decisions about relationships.",
+                "Self-love is the foundation for attracting your ideal partner."
+            ],
+            'career': [
+                "Take calculated risks that align with your long-term vision.",
+                "Network authentically and let your genuine self shine through.",
+                "Persistence combined with flexibility will yield the best results."
+            ],
+            'health': [
+                "Listen to your body's wisdom and honor its need for rest.",
+                "Incorporate meditation and mindful breathing into your daily routine.",
+                "Seek balance between activity and restoration for optimal health."
+            ],
+            'family': [
+                "Practice patience and compassion in all family interactions.",
+                "Set loving boundaries to protect your energy and peace.",
+                "Focus on understanding rather than being understood."
+            ],
+            'spiritual': [
+                "Trust the spiritual downloads and insights you're receiving.",
+                "Create sacred space for daily meditation and reflection.",
+                "Pay attention to recurring dreams and symbolic messages."
+            ],
+            'future': [
+                "Stay present while remaining open to emerging possibilities.",
+                "Trust that everything is unfolding in divine perfect timing.",
+                "Prepare yourself energetically for the blessings coming your way."
+            ],
+            'travel': [
+                "Research thoroughly but remain flexible in your travel plans.",
+                "Pack light in possessions but heavy in positive intentions.",
+                "Every journey teaches valuable lessons about yourself."
+            ],
+            'general': [
+                "Trust your intuition during this powerful time of change.",
+                "Embrace the transformative energies surrounding you.",
+                "Stay grounded while reaching for your highest aspirations."
+            ]
+        }
         
-        return " ".join(reading_parts)
+        context_guidance = guidance.get(context, guidance['general'])
+        return random.choice(context_guidance)
+    
+    def _generate_predictions(self, context: str, input_text: str) -> List[str]:
+        """Generate specific predictions based on context"""
+        # Only generate predictions for future-oriented questions
+        future_keywords = ['when', 'will', 'future', 'next', 'soon', 'coming', 'ahead']
+        if not any(keyword in input_text for keyword in future_keywords):
+            return []
+        
+        predictions = {
+            'love': [
+                "Within the next lunar cycle, a meaningful connection enters your life.",
+                "By the autumn equinox, clarity about a relationship situation emerges."
+            ],
+            'career': [
+                "Before the year's end, a significant professional opportunity manifests.",
+                "The next Mercury transit brings important career communications."
+            ],
+            'health': [
+                "Your energy levels will notably improve within the coming month.",
+                "A breakthrough in your wellness journey occurs during the next season."
+            ],
+            'family': [
+                "A family celebration or reunion brings joy in the near future.",
+                "Resolution to a family matter comes through open communication soon."
+            ],
+            'spiritual': [
+                "A spiritual awakening accelerates during the next full moon cycle.",
+                "Your meditation practice deepens significantly in the coming weeks."
+            ],
+            'general': [
+                "A positive shift in your life circumstances occurs within 90 days.",
+                "The seeds you're planting now will bloom beautifully by next season."
+            ]
+        }
+        
+        context_predictions = predictions.get(context, predictions['general'])
+        return [random.choice(context_predictions)]
+    
+    def _get_contextual_blessing(self, context: str) -> str:
+        """Get context-appropriate blessing"""
+        blessings = {
+            'love': [
+                "May your heart overflow with the love you seek and deserve.",
+                "May divine love surround you and guide all your relationships.",
+                "May you attract a love that honors and celebrates your true self."
+            ],
+            'career': [
+                "May success flow to you through channels of integrity and purpose.",
+                "May your work bring both material abundance and soul satisfaction.",
+                "May your professional path align perfectly with your highest calling."
+            ],
+            'health': [
+                "May vibrant health and energy be your constant companions.",
+                "May your body temple be blessed with strength and vitality.",
+                "May healing light restore perfect balance to your entire being."
+            ],
+            'family': [
+                "May your family bonds be strengthened with love and understanding.",
+                "May peace and harmony reign in your home and heart.",
+                "May generations of wisdom flow through your family lineage."
+            ],
+            'spiritual': [
+                "May your spiritual journey be filled with wonder and enlightenment.",
+                "May divine guidance illuminate every step of your sacred path.",
+                "May you embody the highest version of your soul's expression."
+            ],
+            'future': [
+                "May your future unfold with grace, joy, and divine perfection.",
+                "May all your dreams manifest in ways that exceed your expectations.",
+                "May the path ahead be filled with blessings and beautiful surprises."
+            ],
+            'travel': [
+                "May your journeys be safe, transformative, and filled with wonder.",
+                "May every path you walk lead to greater wisdom and joy.",
+                "May adventures near and far expand your heart and consciousness."
+            ],
+            'general': [
+                "May the stars illuminate your path ahead with brilliant light.",
+                "May divine blessings flow abundantly into every area of your life.",
+                "May you walk in harmony with your highest purpose and deepest joy."
+            ]
+        }
+        
+        context_blessings = blessings.get(context, blessings['general'])
+        return random.choice(context_blessings)
     
     def _get_relevance_emoji(self, percentage: int) -> str:
         """Get emoji based on relevance percentage"""
@@ -344,10 +693,152 @@ class CosmicAstrologerEngine:
             print(f"\n🌙 Input: '{test}'")
             print(f"🔮 Reading: {reading}")
     
+    def show_main_menu(self):
+        """Display main menu and get user's initial path choice"""
+        print("\n🔮 COSMIC ASTROLOGER ENGINE - MAIN MENU")
+        print("=" * 50)
+        print("Choose your cosmic journey:")
+        print("1. 🔍 Find Perfect Astrologer")
+        print("2. 🤖 Get AI Astrologer Reading") 
+        print("3. 📊 Run Demo & Analytics")
+        print("4. ✨ Interactive Mode (All Features)")
+        print("5. 🚪 Exit")
+        print("=" * 50)
+        
+        while True:
+            try:
+                choice = input("\n🌟 Enter your choice (1-5): ").strip()
+                
+                if choice == '1':
+                    self.astrologer_finder_mode()
+                    break
+                elif choice == '2':
+                    self.ai_reading_mode()
+                    break
+                elif choice == '3':
+                    self.demo_and_analytics_mode()
+                    break
+                elif choice == '4':
+                    self.interactive_mode()
+                    break
+                elif choice == '5':
+                    print("🌟 May the cosmic energies guide your journey ahead!")
+                    break
+                else:
+                    print("⚠️ Please enter a valid choice (1-5)")
+                    
+            except KeyboardInterrupt:
+                print("\n🌟 Cosmic consultation ended. Blessed be!")
+                break
+            except Exception as e:
+                print(f"⚠️ Cosmic interference detected: {e}")
+    
+    def astrologer_finder_mode(self):
+        """Dedicated mode for finding astrologers"""
+        print("\n🔍 ASTROLOGER FINDER MODE")
+        print("=" * 40)
+        print("Find the perfect astrologer for your needs!")
+        print("Type 'back' to return to main menu")
+        
+        while True:
+            try:
+                query = input("\n💫 What guidance do you seek? ").strip()
+                
+                if query.lower() == 'back':
+                    self.show_main_menu()
+                    break
+                elif query:
+                    recs = self.find_astrologer(query, top_k=3)
+                    self.print_recommendations(recs, query)
+                    
+                    continue_choice = input("\n🌟 Search again? (y/n): ").strip().lower()
+                    if continue_choice != 'y':
+                        self.show_main_menu()
+                        break
+                else:
+                    print("Please enter your cosmic question.")
+                    
+            except KeyboardInterrupt:
+                print("\n🌟 Returning to main menu...")
+                self.show_main_menu()
+                break
+            except Exception as e:
+                print(f"⚠️ Cosmic interference detected: {e}")
+    
+    def ai_reading_mode(self):
+        """Dedicated mode for AI readings"""
+        print("\n🤖 AI ASTROLOGER READING MODE")
+        print("=" * 40)
+        print("Get personalized cosmic insights from our AI astrologer!")
+        print("Type 'back' to return to main menu")
+        
+        while True:
+            try:
+                astrological_input = input("\n🌙 Share your astrological details or question: ").strip()
+                
+                if astrological_input.lower() == 'back':
+                    self.show_main_menu()
+                    break
+                elif astrological_input:
+                    reading = self.get_ai_reading(astrological_input)
+                    print(f"\n🔮 YOUR COSMIC READING:")
+                    print("-" * 40)
+                    print(reading)
+                    print("-" * 40)
+                    
+                    continue_choice = input("\n🌟 Get another reading? (y/n): ").strip().lower()
+                    if continue_choice != 'y':
+                        self.show_main_menu()
+                        break
+                else:
+                    print("Please share your cosmic question.")
+                    
+            except KeyboardInterrupt:
+                print("\n🌟 Returning to main menu...")
+                self.show_main_menu()
+                break
+            except Exception as e:
+                print(f"⚠️ Cosmic interference detected: {e}")
+    
+    def demo_and_analytics_mode(self):
+        """Dedicated mode for demo and analytics"""
+        print("\n📊 DEMO & ANALYTICS MODE")
+        print("=" * 40)
+        print("Explore system capabilities and view analytics!")
+        print("1. 🚀 Run Demo")
+        print("2. 📊 View Analytics") 
+        print("3. 🔙 Back to Main Menu")
+        
+        while True:
+            try:
+                choice = input("\n🌟 Choose option (1-3): ").strip()
+                
+                if choice == '1':
+                    self.demo_mode()
+                elif choice == '2':
+                    self.run_analytics()
+                elif choice == '3':
+                    self.show_main_menu()
+                    break
+                else:
+                    print("⚠️ Please enter a valid choice (1-3)")
+                    
+                continue_choice = input("\n🌟 Continue in this mode? (y/n): ").strip().lower()
+                if continue_choice != 'y':
+                    self.show_main_menu()
+                    break
+                    
+            except KeyboardInterrupt:
+                print("\n🌟 Returning to main menu...")
+                self.show_main_menu()
+                break
+            except Exception as e:
+                print(f"⚠️ Cosmic interference detected: {e}")
+
     def interactive_mode(self):
         """Run interactive cosmic consultation"""
         print("\n✨ INTERACTIVE COSMIC CONSULTATION")
-        print("Commands: 'find' | 'reading' | 'analytics' | 'demo' | 'quit'")
+        print("Commands: 'find' | 'reading' | 'analytics' | 'demo' | 'back' | 'quit'")
         print("=" * 60)
         
         while True:
@@ -356,6 +847,10 @@ class CosmicAstrologerEngine:
                 
                 if command == 'quit' or command == 'q':
                     print("🌟 May the cosmic energies guide your journey ahead!")
+                    break
+                    
+                elif command == 'back' or command == 'b':
+                    self.show_main_menu()
                     break
                     
                 elif command == 'find' or command == 'f':
@@ -384,7 +879,7 @@ class CosmicAstrologerEngine:
                     self.demo_mode()
                 
                 else:
-                    print("🌟 Available commands: find | reading | analytics | demo | quit")
+                    print("🌟 Available commands: find | reading | analytics | demo | back | quit")
                     
             except KeyboardInterrupt:
                 print("\n🌟 Cosmic consultation ended. Blessed be!")
@@ -402,8 +897,8 @@ def main():
     # Initialize engine
     engine = CosmicAstrologerEngine()
     
-    # Start interactive mode directly
-    engine.interactive_mode()
+    # Show main menu for path selection
+    engine.show_main_menu()
 
 if __name__ == "__main__":
     main()
