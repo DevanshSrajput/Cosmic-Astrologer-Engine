@@ -8,13 +8,24 @@
 ---
 
 ## 📸 Screenshots
+> Glimpses! So you know it actually works
 
-*[Space reserved for application screenshots showing:]*
-- *Main interface and command options*
-- *Astrologer recommendation results with percentage scores*
-- *AI reading generation example*
-- *Analytics dashboard visualization*
-- *Demo mode comprehensive testing*
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="Screenshots/Main Interface and Command Options.png" width="400"><br><b>🏠 Main interface and command options</b></td>
+<td align="center"><img src="Screenshots/Astrologer Recommendation.png" width="400"><br><b>📤 Astrologer recommendation results with percentage scores</b></td>
+</tr>
+<tr>
+<td align="center"><img src="Screenshots/AI Reading.png" width="400"><br><b>📊 AI reading generation example</b></td>
+<td align="center"><img src="Screenshots/Analytics Dashboard.png" width="400"><br><b>💬 Analytics dashboard visualization</b></td>
+</tr>
+<tr>
+<td align="center"><img src="Screenshots/Recommendation Engine Test.png" width="400"><br><b>🤖 Recommendation Engine Test</b></td>
+<td align="center"><img src="Screenshots/Interactive mode Activation.png" width="400"><br><b>📊 Interactive Mode</b></td>
+</tr>
+</table>
+</div>
 
 ---
 
